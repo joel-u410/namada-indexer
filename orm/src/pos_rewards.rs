@@ -1,6 +1,6 @@
+use crate::schema::pos_rewards;
 use bigdecimal::BigDecimal;
 use diesel::{Insertable, Queryable, Selectable};
-use crate::schema::pos_rewards;
 use shared::rewards::Reward;
 
 #[derive(Insertable, Queryable, Selectable, Clone)]
@@ -20,7 +20,7 @@ impl PosRewardInsertDb {
         PosRewardInsertDb {
             owner: reward.delegation_pair.delegator_address.to_string(),
             validator_id,
-            raw_amount: BigDecimal::from(reward.amount.as_i64()),
+            raw_amount: BigDecimal::from(reward.amount),
             epoch,
         }
     }

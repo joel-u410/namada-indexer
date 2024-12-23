@@ -36,7 +36,7 @@ fn upsert_rewards_chunk(
             rewards
                 .into_iter()
                 .map(|reward| {
-                    let validator_id: i32 = validators::table
+                    let validator_id: Result<i32, _> = validators::table
                         .filter(
                             validators::namada_address.eq(&reward
                                 .delegation_pair
@@ -45,10 +45,17 @@ fn upsert_rewards_chunk(
                         )
                         .select(validators::id)
                         .first(transaction_conn)
-                        .expect("Failed to get validator");
+                        .context("Failed to get validator");
 
-                    PosRewardInsertDb::from_reward(reward, validator_id, epoch)
+                    validator_id.map(|validator_id| {
+                        PosRewardInsertDb::from_reward(
+                            reward,
+                            validator_id,
+                            epoch,
+                        )
+                    })
                 })
+                .filter_map(Result::ok)
                 .collect::<Vec<_>>(),
         )
         .on_conflict((

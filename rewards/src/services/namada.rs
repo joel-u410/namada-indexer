@@ -37,9 +37,8 @@ pub async fn query_delegation_pairs(
 pub async fn query_rewards(
     client: &HttpClient,
     delegation_pairs: &HashSet<DelegationPair>,
+    epoch: Epoch,
 ) -> anyhow::Result<Vec<Reward>> {
-    let epoch = get_current_epoch(client).await?;
-
     let mut all_rewards: Vec<Reward> = Vec::new();
 
     let batches: Vec<(usize, Vec<DelegationPair>)> = delegation_pairs
@@ -140,6 +139,7 @@ async fn process_batch(
                     client,
                     &delegation.validator_address.clone().into(),
                     &Some(delegation.delegator_address.clone().into()),
+                    &Some((epoch as u64).into()),
                 )
                 .await
                 .ok()?;

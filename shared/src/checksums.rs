@@ -24,7 +24,7 @@ impl Default for Checksums {
         // This hashmap contains historical transactions id -> name
         let mut fallback = HashMap::new();
 
-        // https://github.com/anoma/namada-mainnet-genesis/tree/main/wasm
+        // mainnet
         fallback.insert(
             "6d753db0390e7cec16729fc405bfe41384c93bd79f42b8b8be41b22edbbf1b7c"
                 .to_string(),
@@ -49,6 +49,121 @@ impl Default for Checksums {
             "ef687f96ec919f5da2e90f125a2800f198a06bcd609a37e5a9ec90d442e32239"
                 .to_string(),
             "tx_transfer".to_string(),
+        );
+
+        // housefire
+        fallback.insert(
+            "ef687f96ec919f5da2e90f125a2800f198a06bcd609a37e5a9ec90d442e32239"
+                .to_string(),
+            "tx_transfer".to_string(),
+        );
+
+        fallback.insert(
+            "b6a1f7e069360650d2c6a1bdd2e5f4e18bb748d35dad02c31c027673fa042d8c"
+                .to_string(),
+            "tx_claim_rewards".to_string(),
+        );
+
+        fallback.insert(
+            "cecb1f1b75cd649915423c5e68be20c5232f94ab57a11a908dc66751bbdc4f72"
+                .to_string(),
+            "tx_ibc".to_string(),
+        );
+
+        fallback.insert(
+            "6d753db0390e7cec16729fc405bfe41384c93bd79f42b8b8be41b22edbbf1b7c"
+                .to_string(),
+            "tx_transfer".to_string(),
+        );
+
+        fallback.insert(
+            "8a9df03a1a8f5e9e606e14a97fdfb2097dba062da1b3b2158bbfa7deabeeadfb"
+                .to_string(),
+            "tx_withdraw".to_string(),
+        );
+
+        fallback.insert(
+            "fb4462b86ff8969826fb66dfa0397cd795df9de9769f7a414d368200a8342951"
+                .to_string(),
+            "vp_implicit".to_string(),
+        );
+
+        fallback.insert(
+            "abb163de1f532c740ee6bb69ccc69a5a55505b5c92979d1f256527833b8dfeca"
+                .to_string(),
+            "vp_user".to_string(),
+        );
+
+        fallback.insert(
+            "b74104949ac0c35ee922fdc3f3db454627742e2483d79550c12fcf31755c6d01"
+                .to_string(),
+            "tx_claim_rewards".to_string(),
+        );
+
+        fallback.insert(
+            "b6a1f7e069360650d2c6a1bdd2e5f4e18bb748d35dad02c31c027673fa042d8c"
+                .to_string(),
+            "tx_claim_rewards".to_string(),
+        );
+
+        fallback.insert(
+            "7b0d43f4a277aadd02562d811c755e09d7f191c601ca3bffb89a7f8b599dab1e"
+                .to_string(),
+            "tx_ibc".to_string(),
+        );
+
+        fallback.insert(
+            "ef687f96ec919f5da2e90f125a2800f198a06bcd609a37e5a9ec90d442e32239"
+                .to_string(),
+            "tx_transfer".to_string(),
+        );
+
+        fallback.insert(
+            "e62fbbbb5de5ddb822439795234bac61e2cdbd70b5cb5015caca17ad210b7f96"
+                .to_string(),
+            "tx_claim_rewards".to_string(),
+        );
+
+        fallback.insert(
+            "b74104949ac0c35ee922fdc3f3db454627742e2483d79550c12fcf31755c6d01"
+                .to_string(),
+            "tx_claim_rewards".to_string(),
+        );
+
+        fallback.insert(
+            "9a950b45d233c8f6fabfa5c473800c182f7666fe0c35c1a612f66a5f094758fe"
+                .to_string(),
+            "tx_transfer".to_string(),
+        );
+
+        fallback.insert(
+            "ef687f96ec919f5da2e90f125a2800f198a06bcd609a37e5a9ec90d442e32239"
+                .to_string(),
+            "tx_transfer".to_string(),
+        );
+
+        fallback.insert(
+            "a8686ae87aa940e3c45adb79cb5e1daa71033d41fe85f6b32713ae3cef21ff25"
+                .to_string(),
+            "tx_withdraw".to_string(),
+        );
+
+        fallback.insert(
+            "8a9df03a1a8f5e9e606e14a97fdfb2097dba062da1b3b2158bbfa7deabeeadfb"
+                .to_string(),
+            "tx_withdraw".to_string(),
+        );
+
+        fallback.insert(
+            "bd1b4230890ff8ece2733de7e770f4a8573a9541813186e5cb718bcc05c2056d"
+                .to_string(),
+            "tx_ibc".to_string(),
+        );
+
+        fallback.insert(
+            "7b0d43f4a277aadd02562d811c755e09d7f191c601ca3bffb89a7f8b599dab1e"
+                .to_string(),
+            "tx_ibc".to_string(),
         );
 
         Self {

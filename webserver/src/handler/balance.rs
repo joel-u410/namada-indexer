@@ -19,7 +19,7 @@ pub async fn get_address_balance(
     let response = balances
         .into_iter()
         .map(|balance| AddressBalanceResponse {
-            token_address: TokenResponse::from(balance.token),
+            token: TokenResponse::from(balance.token),
             min_denom_amount: balance.amount.to_string(),
         })
         .collect();

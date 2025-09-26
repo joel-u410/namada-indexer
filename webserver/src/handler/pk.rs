@@ -4,6 +4,7 @@ use axum::http::HeaderMap;
 use axum_macros::debug_handler;
 
 use crate::error::api::ApiError;
+use crate::response::headers;
 use crate::response::revealed_pk::RevealedPkResponse;
 use crate::state::common::CommonState;
 
@@ -12,15 +13,20 @@ pub async fn get_revealed_pk(
     _headers: HeaderMap,
     Path(address): Path<String>,
     State(state): State<CommonState>,
-) -> Result<Json<RevealedPkResponse>, ApiError> {
+) -> Result<(HeaderMap, Json<RevealedPkResponse>), ApiError> {
     let revealed_pk = state
         .revealed_pk_service
         .get_revealed_pk_by_address(&state.client, address)
         .await?;
 
     let response = RevealedPkResponse {
-        public_key: revealed_pk.public_key,
+        public_key: revealed_pk.public_key.clone(),
+    };
+    let headers = if revealed_pk.public_key.is_some() {
+        headers::with_cache()
+    } else {
+        headers::without_cache()
     };
 
-    Ok(Json(response))
+    Ok((headers, Json(response)))
 }

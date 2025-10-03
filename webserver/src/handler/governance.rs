@@ -9,6 +9,7 @@ use crate::error::governance::GovernanceError;
 use crate::response::governance::{
     ProposalDataResponse, ProposalResponse, ProposalVoteResponse,
 };
+use crate::response::headers;
 use crate::response::utils::PaginatedResponse;
 use crate::state::common::CommonState;
 
@@ -47,14 +48,19 @@ pub async fn get_governance_proposal_by_id(
     _headers: HeaderMap,
     Path(proposal_id): Path<u64>,
     State(state): State<CommonState>,
-) -> Result<Json<ProposalResponse>, ApiError> {
+) -> Result<(HeaderMap, Json<ProposalResponse>), ApiError> {
     let proposal = state
         .gov_service
         .find_governance_proposal_by_id(proposal_id)
         .await?;
 
     if let Some(proposal) = proposal {
-        Ok(Json(ProposalResponse::from(proposal)))
+        let headers = if proposal.activated() {
+            headers::with_cache()
+        } else {
+            headers::without_cache()
+        };
+        Ok((headers, Json(ProposalResponse::from(proposal))))
     } else {
         Err(GovernanceError::NotFound(proposal_id).into())
     }
@@ -65,12 +71,13 @@ pub async fn get_proposal_data_by_proposal_id(
     _headers: HeaderMap,
     Path(proposal_id): Path<u64>,
     State(state): State<CommonState>,
-) -> Result<Json<ProposalDataResponse>, ApiError> {
+) -> Result<(HeaderMap, Json<ProposalDataResponse>), ApiError> {
     let proposal = state.gov_service.find_proposal_data(proposal_id).await?;
 
     let response = ProposalDataResponse::from(proposal);
+    let headers = headers::with_cache();
 
-    Ok(Json(response))
+    Ok((headers, Json(response)))
 }
 
 #[debug_handler]

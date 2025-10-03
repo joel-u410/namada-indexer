@@ -10,6 +10,7 @@ use crate::dto::transaction::{
 };
 use crate::error::api::ApiError;
 use crate::error::transaction::TransactionError;
+use crate::response::headers;
 use crate::response::transaction::{
     InnerTransactionResponse, TransactionHistoryResponse,
     WrapperTransactionResponse,
@@ -22,7 +23,7 @@ pub async fn get_wrapper_tx(
     _headers: HeaderMap,
     Path(tx_id): Path<TransactionIdParam>,
     State(state): State<CommonState>,
-) -> Result<Json<Option<WrapperTransactionResponse>>, ApiError> {
+) -> Result<(HeaderMap, Json<Option<WrapperTransactionResponse>>), ApiError> {
     tx_id.is_valid_hash()?;
 
     let tx_id = tx_id.get();
@@ -43,8 +44,9 @@ pub async fn get_wrapper_tx(
 
     let response = wrapper_tx
         .map(|wrapper| WrapperTransactionResponse::new(wrapper, inner_txs));
+    let headers = headers::with_cache();
 
-    Ok(Json(response))
+    Ok((headers, Json(response)))
 }
 
 #[debug_handler]
@@ -52,7 +54,7 @@ pub async fn get_inner_tx(
     _headers: HeaderMap,
     Path(tx_id): Path<TransactionIdParam>,
     State(state): State<CommonState>,
-) -> Result<Json<Option<InnerTransactionResponse>>, ApiError> {
+) -> Result<(HeaderMap, Json<Option<InnerTransactionResponse>>), ApiError> {
     tx_id.is_valid_hash()?;
 
     let tx_id = tx_id.get();
@@ -63,8 +65,9 @@ pub async fn get_inner_tx(
         .await?;
 
     let response = inner_tx.map(InnerTransactionResponse::new);
+    let headers = headers::with_cache();
 
-    Ok(Json(response))
+    Ok((headers, Json(response)))
 }
 
 #[debug_handler]

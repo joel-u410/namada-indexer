@@ -193,6 +193,13 @@ impl Proposal {
                 .expect("Should be a number"),
         }
     }
+
+    pub fn activated(&self) -> bool {
+        matches!(
+            self.status,
+            ProposalStatus::ExecutedPassed | ProposalStatus::ExecutedRejected
+        )
+    }
 }
 
 impl From<GovernanceProposalVoteDb> for ProposalVote {

@@ -40,7 +40,7 @@ impl GasService {
             .map(|r| {
                 r.iter()
                     .cloned()
-                    .map(|gas_price| {
+                    .filter_map(|gas_price| {
                         GasPrice::from_db(gas_price, tokens.clone())
                     })
                     .collect()
@@ -61,7 +61,7 @@ impl GasService {
             .map(|r| {
                 r.iter()
                     .cloned()
-                    .map(|gas_price| {
+                    .filter_map(|gas_price| {
                         GasPrice::from_db(gas_price, tokens.clone())
                     })
                     .collect()

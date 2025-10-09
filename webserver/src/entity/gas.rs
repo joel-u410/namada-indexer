@@ -13,28 +13,25 @@ impl GasPrice {
     pub fn from_db(
         gas_price_db: GasPriceDb,
         tokens: Vec<(TokenDb, Option<IbcTokenDb>)>,
-    ) -> Self {
-        let token = tokens
-            .into_iter()
-            .find_map(|(token, ibc_token)| {
-                if gas_price_db.token == token.address {
-                    match ibc_token {
-                        Some(ibc_token) => Some(Token::Ibc(IbcToken {
-                            address: Id::Account(ibc_token.address),
-                            trace: Some(Id::IbcTrace(ibc_token.ibc_trace)),
-                        })),
-                        None => Some(Token::Native(Id::Account(token.address))),
-                    }
-                } else {
-                    None
+    ) -> Option<Self> {
+        let token = tokens.into_iter().find_map(|(token, ibc_token)| {
+            if gas_price_db.token == token.address {
+                match ibc_token {
+                    Some(ibc_token) => Some(Token::Ibc(IbcToken {
+                        address: Id::Account(ibc_token.address),
+                        trace: Some(Id::IbcTrace(ibc_token.ibc_trace)),
+                    })),
+                    None => Some(Token::Native(Id::Account(token.address))),
                 }
-            })
-            .expect("Fee token should be known.");
+            } else {
+                None
+            }
+        })?;
 
-        Self {
+        Some(Self {
             token,
             min_denom_amount: gas_price_db.amount.to_string(),
-        }
+        })
     }
 }
 

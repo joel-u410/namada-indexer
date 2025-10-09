@@ -14,7 +14,7 @@ impl GasPrice {
         gas_price_db: GasPriceDb,
         tokens: Vec<(TokenDb, Option<IbcTokenDb>)>,
     ) -> Option<Self> {
-        let token = match tokens.into_iter().find_map(|(token, ibc_token)| {
+        let token = tokens.into_iter().find_map(|(token, ibc_token)| {
             if gas_price_db.token == token.address {
                 match ibc_token {
                     Some(ibc_token) => Some(Token::Ibc(IbcToken {
@@ -26,10 +26,7 @@ impl GasPrice {
             } else {
                 None
             }
-        }) {
-            Some(token) => token,
-            None => return None,
-        };
+        })?;
 
         Some(Self {
             token,

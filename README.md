@@ -117,18 +117,3 @@ If you prefer not to use Docker, you can follow the instructions below to set up
 ## REST API
 The API endpoints are described in the `swagger.yml` file located in the project root. A hosted HTML version of the API documentation is available at [Namada Interface Indexer REST API](https://namada-net.github.io/namada-indexer).
 
-## Populating the Database for Testing
-
-Instead of fetching data from a running network, you can populate the database with random data for testing purposes. Build the project using the following command.
-
-```sh
-cargo build
-# Run the seeder script to populate the database
-cd seeder && cargo run -- --database-url postgres://postgres:password@0.0.0.0:5433/namada-indexer
-```
-
-After populating the database, you can run the webserver to access the data via the API. To query your PostgreSQL database, ensure the PostgreSQL client is installed.
-
-```sh
-apt-get install -y postgresql-client
-```

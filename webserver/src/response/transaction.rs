@@ -103,6 +103,7 @@ pub struct WrapperTransactionResponse {
     pub gas_limit: String,
     pub gas_used: Option<u64>,
     pub amount_per_gas_unit: Option<f64>,
+    pub masp_fee_payment: Option<String>,
     pub block_height: u64,
     pub inner_transactions: Vec<ShortInnerTransactionResponse>,
     pub exit_code: TransactionResultResponse,
@@ -121,6 +122,7 @@ impl WrapperTransactionResponse {
             gas_limit: wrapper.gas_limit.to_string(),
             gas_used: wrapper.gas_used,
             amount_per_gas_unit: wrapper.amount_per_gas_unit,
+            masp_fee_payment: wrapper.masp_fee_payment,
             block_height: wrapper.block_height,
             inner_transactions: inners
                 .into_iter()

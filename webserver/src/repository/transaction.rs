@@ -326,18 +326,17 @@ impl TransactionRepositoryTrait for TransactionRepository {
 
                 // Build `(kind in regular) AND ((sources IN tokens) OR (targets
                 // IN tokens))`
-                let regular_filter = inner_transactions::dsl::kind
-                    .eq_any(regular_kinds.clone())
-                    .and(
+                let regular_filter =
+                    inner_transactions::dsl::kind.eq_any(regular_kinds).and(
                         sources_token
-                            .eq_any(tokens.clone())
-                            .or(targets_token.eq_any(tokens.clone())),
+                            .eq_any(&tokens)
+                            .or(targets_token.eq_any(&tokens)),
                     );
 
                 // Build `(kind in ibc_kinds) AND (ibc_account IN tokens)`
                 let ibc_filter = inner_transactions::dsl::kind
-                    .eq_any(ibc_kinds.clone())
-                    .and(ibc_account.eq_any(tokens));
+                    .eq_any(ibc_kinds)
+                    .and(ibc_account.eq_any(&tokens));
 
                 let inner_by_token = inner_transactions::table
                     .filter(

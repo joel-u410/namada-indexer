@@ -158,14 +158,11 @@ pub async fn get_most_recent_transactions(
 
     // Filter the corresponding inner txs to include only the matching inners in
     // the response
-    let inner_futs = candidates
-        .iter()
-        .map(|tx| {
-            state
-                .transaction_service
-                .get_inner_tx_by_wrapper_id(tx.id.to_string())
-        })
-        .collect::<Vec<_>>();
+    let inner_futs = candidates.iter().map(|tx| {
+        state
+            .transaction_service
+            .get_inner_tx_by_wrapper_id(tx.id.to_string())
+    });
 
     let inner_results = futures::future::join_all(inner_futs).await;
 

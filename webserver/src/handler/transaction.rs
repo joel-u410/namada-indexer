@@ -3,11 +3,14 @@ use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum_extra::extract::Query;
 use axum_macros::debug_handler;
+use serde_json;
 
+use crate::constant::ITEM_PER_PAGE;
 use crate::dto::transaction::{
     TransactionHistoryQueryParams, TransactionIdParam,
     TransactionMostRecentQueryParams,
 };
+use crate::entity::transaction::{InnerTransaction, TransactionKind};
 use crate::error::api::ApiError;
 use crate::error::transaction::TransactionError;
 use crate::response::headers;
@@ -103,32 +106,136 @@ pub async fn get_most_recent_transactions(
     Query(query): Query<TransactionMostRecentQueryParams>,
     State(state): State<CommonState>,
 ) -> Result<Json<Vec<WrapperTransactionResponse>>, ApiError> {
-    let size = query.size.unwrap_or(10);
+    let offset = query.offset.unwrap_or(0);
+    let size = query.size.unwrap_or(ITEM_PER_PAGE);
+    let kind = query.kind;
+    let token = query.token;
 
-    let transactions = state
-        .transaction_service
-        .get_most_recent_transactions(size)
-        .await?;
+    let filters_present = !kind.is_empty() || !token.is_empty();
 
-    let inner_txs = transactions
-        .iter()
-        .map(|tx| {
-            state
-                .transaction_service
-                .get_inner_tx_by_wrapper_id(tx.id.to_string())
+    let wrappers = if !filters_present {
+        state
+            .transaction_service
+            .get_most_recent_transactions(offset, size)
+            .await?
+    } else {
+        state
+            .transaction_service
+            .get_filtered_most_recent_wrappers(
+                offset,
+                size,
+                kind.clone(),
+                token.clone(),
+            )
+            .await?
+    };
+
+    let inner_futs = wrappers.iter().map(|tx| {
+        state
+            .transaction_service
+            .get_inner_tx_by_wrapper_id(tx.id.to_string())
+    });
+    let inner_results = futures::future::join_all(inner_futs).await;
+
+    let response = wrappers
+        .into_iter()
+        .zip(inner_results.into_iter())
+        .filter_map(|(tx, inner_res)| {
+            let mut inners = inner_res.unwrap_or_default();
+
+            if filters_present {
+                if !kind.is_empty() {
+                    inners.retain(|inner_tx| kind.contains(&inner_tx.kind));
+                }
+                if !token.is_empty() {
+                    inners.retain(|inner_tx| {
+                        filter_inner_tx_by_tokens(inner_tx, &token)
+                    });
+                }
+
+                if inners.is_empty() {
+                    return None;
+                }
+            }
+
+            Some(WrapperTransactionResponse::new(tx, inners))
         })
         .collect::<Vec<_>>();
 
-    let inner_txs = futures::future::join_all(inner_txs).await;
-
-    let response = transactions
-        .into_iter()
-        .zip(inner_txs.into_iter())
-        .map(|(tx, inner_tx_result)| {
-            let inner_txs = inner_tx_result.unwrap_or_default();
-            WrapperTransactionResponse::new(tx, inner_txs)
-        })
-        .collect();
-
     Ok(Json(response))
+}
+
+/// Filter a single inner transaction by token addresses involved (only
+/// applicable to transfer types)
+fn filter_inner_tx_by_tokens(
+    inner_tx: &InnerTransaction,
+    token_filter: &[String],
+) -> bool {
+    if token_filter.is_empty() {
+        return true;
+    }
+
+    let Some(data) = &inner_tx.data else {
+        return false;
+    };
+
+    let Ok(json_value) = serde_json::from_str::<serde_json::Value>(data) else {
+        return false;
+    };
+
+    // Check if a candidate token equals any of the filter tokens
+    let token_matches = |candidate: &str| -> bool {
+        token_filter
+            .iter()
+            .any(|filter_token| candidate.eq_ignore_ascii_case(filter_token))
+    };
+
+    // IBC transfers: data is an array; get token from [0].Ibc.address.Account
+    let is_ibc_kind = matches!(
+        inner_tx.kind,
+        TransactionKind::IbcTransparentTransfer
+            | TransactionKind::IbcShieldingTransfer
+            | TransactionKind::IbcUnshieldingTransfer
+    );
+
+    if is_ibc_kind {
+        if let Some(arr) = json_value.as_array() {
+            for item in arr {
+                if let Some(ibc_obj) = item.get("Ibc") {
+                    if let Some(account) = ibc_obj
+                        .get("address")
+                        .and_then(|a| a.get("Account"))
+                        .and_then(|a| a.as_str())
+                    {
+                        if token_matches(account) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // If structure differs unexpectedly, do not match
+        return false;
+    }
+
+    // Non-IBC transfers: check "sources" array containing entries with a
+    // "token" field
+    if let Some(obj) = json_value.as_object() {
+        if let Some(sources) = obj.get("sources").and_then(|v| v.as_array()) {
+            for src in sources {
+                if let Some(token_str) = src
+                    .as_object()
+                    .and_then(|o| o.get("token"))
+                    .and_then(|t| t.as_str())
+                {
+                    if token_matches(token_str) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
 }

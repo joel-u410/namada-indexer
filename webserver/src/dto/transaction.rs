@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use subtle_encoding::hex;
 use validator::Validate;
 
+use crate::entity::transaction::TransactionKind;
 use crate::error::transaction::TransactionError;
 
 #[derive(Clone, Serialize, Deserialize, Validate)]
@@ -36,6 +37,12 @@ impl TransactionIdParam {
 #[derive(Clone, Serialize, Deserialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct TransactionMostRecentQueryParams {
+    #[validate(range(min = 0, max = 1000000))]
+    pub offset: Option<u64>,
     #[validate(range(min = 10, max = 30))]
     pub size: Option<u64>,
+    #[serde(default)]
+    pub kind: Vec<TransactionKind>,
+    #[serde(default)]
+    pub token: Vec<String>,
 }

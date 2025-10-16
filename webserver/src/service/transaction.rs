@@ -1,6 +1,8 @@
+use orm::transactions::TransactionKindDb;
+
 use crate::appstate::AppState;
 use crate::entity::transaction::{
-    InnerTransaction, TransactionHistory, WrapperTransaction,
+    InnerTransaction, TransactionHistory, TransactionKind, WrapperTransaction,
 };
 use crate::error::transaction::TransactionError;
 use crate::repository::chain::{ChainRepository, ChainRepositoryTrait};
@@ -90,6 +92,7 @@ impl TransactionService {
 
     pub async fn get_most_recent_transactions(
         &self,
+        offset: u64,
         size: u64,
     ) -> Result<Vec<WrapperTransaction>, TransactionError> {
         let tokens = self
@@ -100,13 +103,48 @@ impl TransactionService {
 
         let txs = self
             .transaction_repo
-            .find_most_recent_transactions(size as i32)
+            .find_most_recent_transactions(offset as i64, size as i32)
             .await
             .map_err(TransactionError::Database)?;
 
         Ok(txs
             .into_iter()
             .map(|w| WrapperTransaction::from_db(w, tokens.clone()))
+            .collect())
+    }
+
+    pub async fn get_filtered_most_recent_wrappers(
+        &self,
+        offset: u64,
+        size: u64,
+        kinds: Vec<TransactionKind>,
+        tokens: Vec<String>,
+    ) -> Result<Vec<WrapperTransaction>, TransactionError> {
+        let tokens_map = self
+            .chain_repo
+            .find_tokens()
+            .await
+            .map_err(TransactionError::Database)?;
+
+        let kinds_db = kinds
+            .into_iter()
+            .map(TransactionKindDb::from)
+            .collect::<Vec<_>>();
+
+        let txs = self
+            .transaction_repo
+            .find_recent_matching_wrappers(
+                offset as i64,
+                size as i32,
+                kinds_db,
+                tokens,
+            )
+            .await
+            .map_err(TransactionError::Database)?;
+
+        Ok(txs
+            .into_iter()
+            .map(|w| WrapperTransaction::from_db(w, tokens_map.clone()))
             .collect())
     }
 }

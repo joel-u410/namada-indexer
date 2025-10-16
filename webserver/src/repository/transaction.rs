@@ -1,4 +1,7 @@
 use async_trait::async_trait;
+use diesel::dsl::{exists, sql};
+use diesel::prelude::*;
+use diesel::sql_types::Text;
 use diesel::{
     ExpressionMethods, JoinOnDsl, QueryDsl, RunQueryDsl, SelectableHelper,
 };
@@ -6,7 +9,8 @@ use orm::schema::{
     inner_transactions, transaction_history, wrapper_transactions,
 };
 use orm::transactions::{
-    InnerTransactionDb, TransactionHistoryDb, WrapperTransactionDb,
+    InnerTransactionDb, TransactionHistoryDb, TransactionKindDb,
+    WrapperTransactionDb,
 };
 
 use super::utils::{Paginate, PaginatedResponseDb};
@@ -47,7 +51,16 @@ pub trait TransactionRepositoryTrait {
     ) -> Result<Vec<WrapperTransactionDb>, String>;
     async fn find_most_recent_transactions(
         &self,
+        offset: i64,
         size: i32,
+    ) -> Result<Vec<WrapperTransactionDb>, String>;
+
+    async fn find_recent_matching_wrappers(
+        &self,
+        offset: i64,
+        size: i32,
+        kinds: Vec<TransactionKindDb>,
+        tokens: Vec<String>,
     ) -> Result<Vec<WrapperTransactionDb>, String>;
 }
 
@@ -154,6 +167,7 @@ impl TransactionRepositoryTrait for TransactionRepository {
 
     async fn find_most_recent_transactions(
         &self,
+        offset: i64,
         size: i32,
     ) -> Result<Vec<WrapperTransactionDb>, String> {
         let conn = self.app_state.get_db_connection().await;
@@ -161,6 +175,101 @@ impl TransactionRepositoryTrait for TransactionRepository {
         conn.interact(move |conn| {
             wrapper_transactions::table
                 .order(wrapper_transactions::dsl::block_height.desc())
+                .offset(offset)
+                .limit(size as i64)
+                .select(WrapperTransactionDb::as_select())
+                .get_results(conn)
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())
+    }
+
+    async fn find_recent_matching_wrappers(
+        &self,
+        offset: i64,
+        size: i32,
+        kinds: Vec<TransactionKindDb>,
+        tokens: Vec<String>,
+    ) -> Result<Vec<WrapperTransactionDb>, String> {
+        let conn = self.app_state.get_db_connection().await;
+
+        conn.interact(move |conn| {
+            let mut outer =
+                wrapper_transactions::table.into_boxed::<diesel::pg::Pg>();
+
+            // 1) Kind filter using typed enum mapping (apply as its own EXISTS)
+            if !kinds.is_empty() {
+                let inner_by_kind = inner_transactions::table
+                    .filter(
+                        inner_transactions::dsl::wrapper_id
+                            .eq(wrapper_transactions::dsl::id),
+                    )
+                    .filter(inner_transactions::dsl::kind.eq_any(kinds));
+
+                outer = outer.filter(exists(inner_by_kind));
+            }
+
+            // 2) Token filters via JSON path extraction (apply as its own
+            //    EXISTS)
+            if !tokens.is_empty() {
+                // regular transfer kinds (non-IBC)
+                let regular_kinds = [
+                    TransactionKindDb::TransparentTransfer,
+                    TransactionKindDb::ShieldedTransfer,
+                    TransactionKindDb::ShieldingTransfer,
+                    TransactionKindDb::UnshieldingTransfer,
+                    TransactionKindDb::MixedTransfer,
+                ];
+
+                // IBC transfer kinds
+                let ibc_kinds = [
+                    TransactionKindDb::IbcTransparentTransfer,
+                    TransactionKindDb::IbcShieldingTransfer,
+                    TransactionKindDb::IbcUnshieldingTransfer,
+                ];
+
+                // JSON path extracts coerced to non-null text
+                let sources_token = sql::<Text>(
+                    "COALESCE(inner_transactions.data::jsonb #>> \
+                     '{sources,0,token}', '')",
+                );
+                let targets_token = sql::<Text>(
+                    "COALESCE(inner_transactions.data::jsonb #>> \
+                     '{targets,0,token}', '')",
+                );
+                let ibc_account = sql::<Text>(
+                    "COALESCE(inner_transactions.data::jsonb #>> \
+                     '{0,Ibc,address,Account}', '')",
+                );
+
+                // Build `(kind in regular) AND ((sources IN tokens) OR (targets
+                // IN tokens))`
+                let regular_filter =
+                    inner_transactions::dsl::kind.eq_any(regular_kinds).and(
+                        sources_token
+                            .eq_any(&tokens)
+                            .or(targets_token.eq_any(&tokens)),
+                    );
+
+                // Build `(kind in ibc_kinds) AND (ibc_account IN tokens)`
+                let ibc_filter = inner_transactions::dsl::kind
+                    .eq_any(ibc_kinds)
+                    .and(ibc_account.eq_any(&tokens));
+
+                let inner_by_token = inner_transactions::table
+                    .filter(
+                        inner_transactions::dsl::wrapper_id
+                            .eq(wrapper_transactions::dsl::id),
+                    )
+                    .filter(regular_filter.or(ibc_filter));
+
+                outer = outer.filter(exists(inner_by_token));
+            }
+
+            outer
+                .order(wrapper_transactions::dsl::block_height.desc())
+                .offset(offset)
                 .limit(size as i64)
                 .select(WrapperTransactionDb::as_select())
                 .get_results(conn)

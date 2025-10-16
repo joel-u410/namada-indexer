@@ -3,10 +3,12 @@ use orm::transactions::{
     InnerTransactionDb, TransactionHistoryDb, TransactionHistoryKindDb,
     TransactionKindDb, TransactionResultDb, WrapperTransactionDb,
 };
+use serde::{Deserialize, Serialize};
 use shared::id::Id;
 use shared::token::{IbcToken, Token};
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum TransactionKind {
     TransparentTransfer,
     ShieldedTransfer,
@@ -71,6 +73,43 @@ impl From<TransactionKindDb> for TransactionKind {
             TransactionKindDb::UnjailValidator => Self::UnjailValidator,
             TransactionKindDb::ChangeConsensusKey => Self::ChangeConsensusKey,
             TransactionKindDb::InitAccount => Self::InitAccount,
+        }
+    }
+}
+
+impl From<TransactionKind> for TransactionKindDb {
+    fn from(value: TransactionKind) -> Self {
+        match value {
+            TransactionKind::TransparentTransfer => Self::TransparentTransfer,
+            TransactionKind::ShieldedTransfer => Self::ShieldedTransfer,
+            TransactionKind::ShieldingTransfer => Self::ShieldingTransfer,
+            TransactionKind::UnshieldingTransfer => Self::UnshieldingTransfer,
+            TransactionKind::MixedTransfer => Self::MixedTransfer,
+            TransactionKind::Bond => Self::Bond,
+            TransactionKind::Redelegation => Self::Redelegation,
+            TransactionKind::Unbond => Self::Unbond,
+            TransactionKind::Withdraw => Self::Withdraw,
+            TransactionKind::ClaimRewards => Self::ClaimRewards,
+            TransactionKind::VoteProposal => Self::VoteProposal,
+            TransactionKind::InitProposal => Self::InitProposal,
+            TransactionKind::ChangeMetadata => Self::ChangeMetadata,
+            TransactionKind::ChangeCommission => Self::ChangeCommission,
+            TransactionKind::RevealPk => Self::RevealPk,
+            TransactionKind::Unknown => Self::Unknown,
+            TransactionKind::IbcMsgTransfer => Self::IbcMsgTransfer,
+            TransactionKind::IbcTransparentTransfer => {
+                Self::IbcTransparentTransfer
+            }
+            TransactionKind::IbcShieldingTransfer => Self::IbcShieldingTransfer,
+            TransactionKind::IbcUnshieldingTransfer => {
+                Self::IbcUnshieldingTransfer
+            }
+            TransactionKind::BecomeValidator => Self::BecomeValidator,
+            TransactionKind::ReactivateValidator => Self::ReactivateValidator,
+            TransactionKind::DeactivateValidator => Self::DeactivateValidator,
+            TransactionKind::UnjailValidator => Self::UnjailValidator,
+            TransactionKind::ChangeConsensusKey => Self::ChangeConsensusKey,
+            TransactionKind::InitAccount => Self::InitAccount,
         }
     }
 }

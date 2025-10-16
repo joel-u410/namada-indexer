@@ -73,7 +73,7 @@ where
             .map(|p| p.trim())
             .map(|p| {
                 TransactionKind::deserialize(StrDeserializer::<D::Error>::new(
-                    &p,
+                    p,
                 ))
             })
             .collect::<Result<Vec<_>, _>>()?,

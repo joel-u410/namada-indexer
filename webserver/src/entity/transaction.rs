@@ -77,6 +77,43 @@ impl From<TransactionKindDb> for TransactionKind {
     }
 }
 
+impl From<TransactionKind> for TransactionKindDb {
+    fn from(value: TransactionKind) -> Self {
+        match value {
+            TransactionKind::TransparentTransfer => Self::TransparentTransfer,
+            TransactionKind::ShieldedTransfer => Self::ShieldedTransfer,
+            TransactionKind::ShieldingTransfer => Self::ShieldingTransfer,
+            TransactionKind::UnshieldingTransfer => Self::UnshieldingTransfer,
+            TransactionKind::MixedTransfer => Self::MixedTransfer,
+            TransactionKind::Bond => Self::Bond,
+            TransactionKind::Redelegation => Self::Redelegation,
+            TransactionKind::Unbond => Self::Unbond,
+            TransactionKind::Withdraw => Self::Withdraw,
+            TransactionKind::ClaimRewards => Self::ClaimRewards,
+            TransactionKind::VoteProposal => Self::VoteProposal,
+            TransactionKind::InitProposal => Self::InitProposal,
+            TransactionKind::ChangeMetadata => Self::ChangeMetadata,
+            TransactionKind::ChangeCommission => Self::ChangeCommission,
+            TransactionKind::RevealPk => Self::RevealPk,
+            TransactionKind::Unknown => Self::Unknown,
+            TransactionKind::IbcMsgTransfer => Self::IbcMsgTransfer,
+            TransactionKind::IbcTransparentTransfer => {
+                Self::IbcTransparentTransfer
+            }
+            TransactionKind::IbcShieldingTransfer => Self::IbcShieldingTransfer,
+            TransactionKind::IbcUnshieldingTransfer => {
+                Self::IbcUnshieldingTransfer
+            }
+            TransactionKind::BecomeValidator => Self::BecomeValidator,
+            TransactionKind::ReactivateValidator => Self::ReactivateValidator,
+            TransactionKind::DeactivateValidator => Self::DeactivateValidator,
+            TransactionKind::UnjailValidator => Self::UnjailValidator,
+            TransactionKind::ChangeConsensusKey => Self::ChangeConsensusKey,
+            TransactionKind::InitAccount => Self::InitAccount,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct WrapperTransaction {
     pub id: Id,

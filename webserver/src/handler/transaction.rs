@@ -5,6 +5,7 @@ use axum_extra::extract::Query;
 use axum_macros::debug_handler;
 use serde_json;
 
+use crate::constant::ITEM_PER_PAGE;
 use crate::dto::transaction::{
     TransactionHistoryQueryParams, TransactionIdParam,
     TransactionMostRecentQueryParams,
@@ -106,83 +107,55 @@ pub async fn get_most_recent_transactions(
     State(state): State<CommonState>,
 ) -> Result<Json<Vec<WrapperTransactionResponse>>, ApiError> {
     let offset = query.offset.unwrap_or(0);
-    let size = query.size.unwrap_or(10);
+    let size = query.size.unwrap_or(ITEM_PER_PAGE);
     let kind = query.kind;
     let token = query.token;
 
     let filters_present = !kind.is_empty() || !token.is_empty();
 
-    if !filters_present {
-        // If no filters are needed, we can just page over the wrapper tx table
-        // directly
-        let transactions = state
+    let wrappers = if !filters_present {
+        state
             .transaction_service
             .get_most_recent_transactions(offset, size)
-            .await?;
+            .await?
+    } else {
+        state
+            .transaction_service
+            .get_filtered_most_recent_wrappers(
+                offset,
+                size,
+                kind.clone(),
+                token.clone(),
+            )
+            .await?
+    };
 
-        let inner_txs = transactions
-            .iter()
-            .map(|tx| {
-                state
-                    .transaction_service
-                    .get_inner_tx_by_wrapper_id(tx.id.to_string())
-            })
-            .collect::<Vec<_>>();
-
-        let inner_txs = futures::future::join_all(inner_txs).await;
-
-        let response = transactions
-            .into_iter()
-            .zip(inner_txs.into_iter())
-            .map(|(tx, inner_tx_result)| {
-                let inner_txs = inner_tx_result.unwrap_or_default();
-                WrapperTransactionResponse::new(tx, inner_txs)
-            })
-            .collect();
-
-        return Ok(Json(response));
-    }
-
-    // Filtering by tx kind and/or transfer token:
-    // First, search for and return 'size' number of wrappers that have at least
-    // one inner tx matching the filters
-    let candidates = state
-        .transaction_service
-        .get_filtered_most_recent_wrappers(
-            offset,
-            size,
-            kind.clone(),
-            token.clone(),
-        )
-        .await?;
-
-    // Filter the corresponding inner txs to include only the matching inners in
-    // the response
-    let inner_futs = candidates.iter().map(|tx| {
+    let inner_futs = wrappers.iter().map(|tx| {
         state
             .transaction_service
             .get_inner_tx_by_wrapper_id(tx.id.to_string())
     });
-
     let inner_results = futures::future::join_all(inner_futs).await;
 
-    let response = candidates
+    let response = wrappers
         .into_iter()
         .zip(inner_results.into_iter())
         .filter_map(|(tx, inner_res)| {
             let mut inners = inner_res.unwrap_or_default();
 
-            if !kind.is_empty() {
-                inners.retain(|inner_tx| kind.contains(&inner_tx.kind));
-            }
-            if !token.is_empty() {
-                inners.retain(|inner_tx| {
-                    filter_inner_tx_by_tokens(inner_tx, &token)
-                });
-            }
+            if filters_present {
+                if !kind.is_empty() {
+                    inners.retain(|inner_tx| kind.contains(&inner_tx.kind));
+                }
+                if !token.is_empty() {
+                    inners.retain(|inner_tx| {
+                        filter_inner_tx_by_tokens(inner_tx, &token)
+                    });
+                }
 
-            if inners.is_empty() {
-                return None;
+                if inners.is_empty() {
+                    return None;
+                }
             }
 
             Some(WrapperTransactionResponse::new(tx, inners))

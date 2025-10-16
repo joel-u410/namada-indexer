@@ -15,7 +15,6 @@ use orm::transactions::{
 
 use super::utils::{Paginate, PaginatedResponseDb};
 use crate::appstate::AppState;
-use crate::entity::transaction::TransactionKind;
 
 #[derive(Clone)]
 pub struct TransactionRepository {
@@ -60,7 +59,7 @@ pub trait TransactionRepositoryTrait {
         &self,
         offset: i64,
         size: i32,
-        kinds: Vec<TransactionKind>,
+        kinds: Vec<TransactionKindDb>,
         tokens: Vec<String>,
     ) -> Result<Vec<WrapperTransactionDb>, String>;
 }
@@ -190,7 +189,7 @@ impl TransactionRepositoryTrait for TransactionRepository {
         &self,
         offset: i64,
         size: i32,
-        kinds: Vec<TransactionKind>,
+        kinds: Vec<TransactionKindDb>,
         tokens: Vec<String>,
     ) -> Result<Vec<WrapperTransactionDb>, String> {
         let conn = self.app_state.get_db_connection().await;
@@ -201,92 +200,12 @@ impl TransactionRepositoryTrait for TransactionRepository {
 
             // 1) Kind filter using typed enum mapping (apply as its own EXISTS)
             if !kinds.is_empty() {
-                fn map_kind(k: &TransactionKind) -> TransactionKindDb {
-                    match k {
-                        TransactionKind::TransparentTransfer => {
-                            TransactionKindDb::TransparentTransfer
-                        }
-                        TransactionKind::ShieldedTransfer => {
-                            TransactionKindDb::ShieldedTransfer
-                        }
-                        TransactionKind::ShieldingTransfer => {
-                            TransactionKindDb::ShieldingTransfer
-                        }
-                        TransactionKind::UnshieldingTransfer => {
-                            TransactionKindDb::UnshieldingTransfer
-                        }
-                        TransactionKind::MixedTransfer => {
-                            TransactionKindDb::MixedTransfer
-                        }
-                        TransactionKind::Bond => TransactionKindDb::Bond,
-                        TransactionKind::Redelegation => {
-                            TransactionKindDb::Redelegation
-                        }
-                        TransactionKind::Unbond => TransactionKindDb::Unbond,
-                        TransactionKind::Withdraw => {
-                            TransactionKindDb::Withdraw
-                        }
-                        TransactionKind::ClaimRewards => {
-                            TransactionKindDb::ClaimRewards
-                        }
-                        TransactionKind::VoteProposal => {
-                            TransactionKindDb::VoteProposal
-                        }
-                        TransactionKind::InitProposal => {
-                            TransactionKindDb::InitProposal
-                        }
-                        TransactionKind::ChangeMetadata => {
-                            TransactionKindDb::ChangeMetadata
-                        }
-                        TransactionKind::ChangeCommission => {
-                            TransactionKindDb::ChangeCommission
-                        }
-                        TransactionKind::RevealPk => {
-                            TransactionKindDb::RevealPk
-                        }
-                        TransactionKind::IbcMsgTransfer => {
-                            TransactionKindDb::IbcMsgTransfer
-                        }
-                        TransactionKind::IbcTransparentTransfer => {
-                            TransactionKindDb::IbcTransparentTransfer
-                        }
-                        TransactionKind::IbcShieldingTransfer => {
-                            TransactionKindDb::IbcShieldingTransfer
-                        }
-                        TransactionKind::IbcUnshieldingTransfer => {
-                            TransactionKindDb::IbcUnshieldingTransfer
-                        }
-                        TransactionKind::BecomeValidator => {
-                            TransactionKindDb::BecomeValidator
-                        }
-                        TransactionKind::DeactivateValidator => {
-                            TransactionKindDb::DeactivateValidator
-                        }
-                        TransactionKind::ReactivateValidator => {
-                            TransactionKindDb::ReactivateValidator
-                        }
-                        TransactionKind::UnjailValidator => {
-                            TransactionKindDb::UnjailValidator
-                        }
-                        TransactionKind::ChangeConsensusKey => {
-                            TransactionKindDb::ChangeConsensusKey
-                        }
-                        TransactionKind::InitAccount => {
-                            TransactionKindDb::InitAccount
-                        }
-                        TransactionKind::Unknown => TransactionKindDb::Unknown,
-                    }
-                }
-
-                let kinds_db: Vec<TransactionKindDb> =
-                    kinds.iter().map(map_kind).collect();
-
                 let inner_by_kind = inner_transactions::table
                     .filter(
                         inner_transactions::dsl::wrapper_id
                             .eq(wrapper_transactions::dsl::id),
                     )
-                    .filter(inner_transactions::dsl::kind.eq_any(kinds_db));
+                    .filter(inner_transactions::dsl::kind.eq_any(kinds));
 
                 outer = outer.filter(exists(inner_by_kind));
             }
@@ -295,7 +214,7 @@ impl TransactionRepositoryTrait for TransactionRepository {
             //    EXISTS)
             if !tokens.is_empty() {
                 // regular transfer kinds (non-IBC)
-                let regular_kinds: Vec<TransactionKindDb> = vec![
+                let regular_kinds = [
                     TransactionKindDb::TransparentTransfer,
                     TransactionKindDb::ShieldedTransfer,
                     TransactionKindDb::ShieldingTransfer,
@@ -304,7 +223,7 @@ impl TransactionRepositoryTrait for TransactionRepository {
                 ];
 
                 // IBC transfer kinds
-                let ibc_kinds: Vec<TransactionKindDb> = vec![
+                let ibc_kinds = [
                     TransactionKindDb::IbcTransparentTransfer,
                     TransactionKindDb::IbcShieldingTransfer,
                     TransactionKindDb::IbcUnshieldingTransfer,

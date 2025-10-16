@@ -1,3 +1,5 @@
+use orm::transactions::TransactionKindDb;
+
 use crate::appstate::AppState;
 use crate::entity::transaction::{
     InnerTransaction, TransactionHistory, TransactionKind, WrapperTransaction,
@@ -124,12 +126,17 @@ impl TransactionService {
             .await
             .map_err(TransactionError::Database)?;
 
+        let kinds_db = kinds
+            .into_iter()
+            .map(TransactionKindDb::from)
+            .collect::<Vec<_>>();
+
         let txs = self
             .transaction_repo
             .find_recent_matching_wrappers(
                 offset as i64,
                 size as i32,
-                kinds,
+                kinds_db,
                 tokens,
             )
             .await

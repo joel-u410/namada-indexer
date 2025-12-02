@@ -252,7 +252,7 @@ pub fn transfer_to_ibc_tx_kind(
                         transfer_data,
                     )))
                 } else {
-                    Ok(TransactionKind::IbcTrasparentTransfer((
+                    Ok(TransactionKind::IbcRecvTrasparentTransfer((
                         token_id,
                         transfer_data,
                     )))
@@ -311,7 +311,7 @@ pub fn transfer_to_ibc_tx_kind(
                     transfer_data,
                 )))
             } else {
-                Ok(TransactionKind::IbcTrasparentTransfer((
+                Ok(TransactionKind::IbcSendTrasparentTransfer((
                     token_id,
                     transfer_data,
                 )))

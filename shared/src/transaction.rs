@@ -77,7 +77,8 @@ pub enum TransactionKind {
     MixedTransfer(Option<TransferData>),
     /// Generic, non-transfer, IBC messages
     IbcMsg(Option<IbcMessage<Transfer>>),
-    IbcTrasparentTransfer((crate::token::Token, TransferData)),
+    IbcRecvTrasparentTransfer((crate::token::Token, TransferData)),
+    IbcSendTrasparentTransfer((crate::token::Token, TransferData)),
     IbcShieldingTransfer((crate::token::Token, TransferData)),
     IbcUnshieldingTransfer((crate::token::Token, TransferData)),
     Bond(Option<Bond>),
@@ -376,11 +377,20 @@ impl InnerTransaction {
             && (wrapper_tx_succeeded || masp_fee_payment || !atomic_batch)
     }
 
+    pub fn is_sent_ibc(&self) -> bool {
+        matches!(
+            self.kind,
+            TransactionKind::IbcSendTrasparentTransfer(_)
+                | TransactionKind::IbcUnshieldingTransfer(_)
+        )
+    }
+
     pub fn is_ibc(&self) -> bool {
         matches!(
             self.kind,
             TransactionKind::IbcMsg(_)
-                | TransactionKind::IbcTrasparentTransfer(_)
+                | TransactionKind::IbcRecvTrasparentTransfer(_)
+                | TransactionKind::IbcSendTrasparentTransfer(_)
                 | TransactionKind::IbcUnshieldingTransfer(_)
                 | TransactionKind::IbcShieldingTransfer(_)
         )

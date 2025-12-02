@@ -1,9 +1,12 @@
 use bigdecimal::BigDecimal;
+use namada_sdk::address::Address;
+use namada_sdk::hash::Hash;
 use namada_sdk::ibc::core::channel::types::acknowledgement::AcknowledgementStatus;
 use namada_sdk::ibc::core::channel::types::msgs::PacketMsg;
 use namada_sdk::ibc::core::handler::types::msgs::MsgEnvelope;
 use shared::block_result::{BlockResult, TxAttributesType};
 use shared::gas::GasEstimation;
+use shared::id::Id;
 use shared::transaction::{
     IbcAck, IbcAckStatus, IbcSequence, IbcTokenAction, InnerTransaction,
     TransactionKind, WrapperTransaction, ibc_denom_received, ibc_denom_sent,
@@ -45,18 +48,22 @@ pub fn get_ibc_packets(
     block_results: &BlockResult,
     txs: &[(WrapperTransaction, Vec<InnerTransaction>)],
 ) -> Vec<IbcSequence> {
-    let mut ibc_txs: Vec<_> = txs.iter().rev().fold(
-        Default::default(),
-        |mut acc, (wrapper_tx, inner_txs)| {
-            // Extract successful ibc transactions from each batch
-            for inner_tx in inner_txs {
-                if inner_tx.is_ibc() && inner_tx.was_successful(wrapper_tx) {
-                    acc.push(inner_tx.tx_id.to_owned())
+    let mut legacy_extracted_id_tx_ids =
+        txs.iter().flat_map(|(wrapper_tx, inner_txs)| {
+            let mut inner_txs_it = inner_txs.iter();
+
+            std::iter::from_fn(move || {
+                let inner_tx = inner_txs_it.next()?;
+
+                // Extract successful ibc transactions from each batch
+                if inner_tx.is_sent_ibc() && inner_tx.was_successful(wrapper_tx)
+                {
+                    Some(inner_tx.tx_id.to_owned())
+                } else {
+                    None
                 }
-            }
-            acc
-        },
-    );
+            })
+        });
 
     block_results
         .end_events
@@ -71,9 +78,41 @@ pub fn get_ibc_packets(
                         source_channel: packet.source_channel.clone(),
                         dest_channel: packet.dest_channel.clone(),
                         timeout: packet.timeout_timestamp,
-                        tx_id: ibc_txs
-                            .pop()
-                            .expect("Ibc ack should have a corresponding tx."),
+                        tx_id: {
+                            if let Some(id) = event.inner_tx_hash.as_ref() {
+                                // the id was in the event. this should
+                                // be the case 99% of the times, unless
+                                // we're crawling through the history
+                                // of some older namada version, or
+                                // we encounter a pgf funding tx
+                                id.clone()
+                            } else if packet
+                                .as_fungible_token_packet()
+                                .is_some_and(|ics20_packet| {
+                                    matches!(
+                                        ics20_packet.sender.parse().ok(),
+                                        Some(Address::Internal(_))
+                                    )
+                                })
+                            {
+                                // this packet was sent by an internal address,
+                                // most likely the pgf (for pgf funding via
+                                // IBC). there is no inner tx id in this
+                                // case, let's add the hash of the packet
+                                // id, as a workaround.
+                                Id::Hash(
+                                    Hash::sha256(packet.id())
+                                        .to_string()
+                                        .to_lowercase(),
+                                )
+                            } else {
+                                // this handles older namada versions
+                                legacy_extracted_id_tx_ids.next().expect(
+                                    "Ibc sent packet should have a \
+                                     corresponding tx",
+                                )
+                            }
+                        },
                     }),
                     _ => None,
                 }
@@ -171,7 +210,8 @@ pub fn get_gas_estimates(
                     let notes = tx.notes;
                     gas_estimate.increase_mixed_transfer(notes)
                 }
-                TransactionKind::IbcTrasparentTransfer(_) => {
+                TransactionKind::IbcSendTrasparentTransfer(_)
+                | TransactionKind::IbcRecvTrasparentTransfer(_) => {
                     gas_estimate.increase_ibc_transparent_transfer()
                 }
                 TransactionKind::Bond(_) => gas_estimate.increase_bond(),

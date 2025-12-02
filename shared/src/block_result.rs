@@ -6,7 +6,7 @@ use std::str::FromStr;
 use bigdecimal::BigDecimal;
 use namada_core::masp::MaspTxId;
 use namada_core::token::Amount as NamadaAmount;
-use namada_events::extend::ReadFromEventAttributes;
+use namada_events::extend::{InnerTxHash, ReadFromEventAttributes};
 use namada_ibc::IbcTxDataHash;
 use namada_ibc::apps::transfer::types::packet::PacketData as Ics20PacketData;
 use namada_tx::IndexedTx;
@@ -60,6 +60,7 @@ pub struct BlockResult {
 #[derive(Debug, Clone)]
 pub struct Event {
     pub kind: EventKind,
+    pub inner_tx_hash: Option<Id>,
     pub attributes: Option<TxAttributesType>,
 }
 
@@ -195,6 +196,34 @@ pub struct IbcPacket {
     pub timeout_height: String,
     pub sequence: String,
     pub data: String,
+}
+
+impl IbcPacket {
+    pub fn as_fungible_token_packet(&self) -> Option<FungibleTokenPacket> {
+        let packet_data: Ics20PacketData =
+            serde_json::from_str(&self.data).ok()?;
+        let ibc_amount: NamadaAmount =
+            packet_data.token.amount.try_into().ok()?;
+
+        Some(FungibleTokenPacket {
+            memo: packet_data.memo.to_string(),
+            sender: packet_data.sender.to_string(),
+            receiver: packet_data.receiver.to_string(),
+            denom: packet_data.token.denom.to_string(),
+            amount: Amount::from(ibc_amount).into(),
+        })
+    }
+
+    pub fn id(&self) -> String {
+        format!(
+            "{}/{}/{}/{}/{}",
+            self.dest_port,
+            self.dest_channel,
+            self.source_port,
+            self.source_channel,
+            self.sequence
+        )
+    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -393,20 +422,11 @@ impl TxAttributesType {
             _ => return None,
         };
 
-        let packet_data: Ics20PacketData =
-            serde_json::from_str(&packet.data).ok()?;
-        let ibc_amount: NamadaAmount =
-            packet_data.token.amount.try_into().ok()?;
-
-        let ics20_packet = FungibleTokenPacket {
-            memo: packet_data.memo.to_string(),
-            sender: packet_data.sender.to_string(),
-            receiver: packet_data.receiver.to_string(),
-            denom: packet_data.token.denom.to_string(),
-            amount: Amount::from(ibc_amount).into(),
-        };
-
-        Some((action, Some(packet), Cow::Owned(ics20_packet)))
+        Some((
+            action,
+            Some(packet),
+            Cow::Owned(packet.as_fungible_token_packet()?),
+        ))
     }
 }
 
@@ -430,7 +450,12 @@ impl From<TendermintBlockResultResponse> for BlockResult {
                 );
                 let attributes =
                     TxAttributesType::deserialize(&kind, &raw_attributes);
-                Event { kind, attributes }
+                let inner_tx_hash = try_parse_inner_tx_hash(&raw_attributes);
+                Event {
+                    kind,
+                    attributes,
+                    inner_tx_hash,
+                }
             })
             .collect::<Vec<Event>>();
         let end_events = value
@@ -451,7 +476,12 @@ impl From<TendermintBlockResultResponse> for BlockResult {
                 );
                 let attributes =
                     TxAttributesType::deserialize(&kind, &raw_attributes);
-                Event { kind, attributes }
+                let inner_tx_hash = try_parse_inner_tx_hash(&raw_attributes);
+                Event {
+                    kind,
+                    attributes,
+                    inner_tx_hash,
+                }
             })
             .collect::<Vec<Event>>();
         Self {
@@ -561,6 +591,14 @@ impl BlockResult {
     }
 }
 
+fn try_parse_inner_tx_hash(
+    raw_attributes: &BTreeMap<String, String>,
+) -> Option<Id> {
+    InnerTxHash::read_opt_from_event_attributes(raw_attributes)
+        .expect("parsing the inner tx hash shouldn't fail")
+        .map(|hash| Id::Hash(hash.to_string().to_lowercase()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -594,6 +632,7 @@ mod tests {
 
                 Some(Event {
                     kind,
+                    inner_tx_hash: None,
                     attributes: parsed_attributes,
                 })
             })
@@ -604,6 +643,7 @@ mod tests {
             events.remove(0),
             Event {
                 kind: EventKind::FungibleTokenPacket,
+                inner_tx_hash: None,
                 attributes: Some(
                     TxAttributesType::FungibleTokenPacket {
                         is_ack: true,

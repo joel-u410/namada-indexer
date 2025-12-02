@@ -211,7 +211,8 @@ impl Block {
                         vec![]
                     }
                 }
-                TransactionKind::IbcTrasparentTransfer((_, transfer))
+                TransactionKind::IbcSendTrasparentTransfer((_, transfer))
+                | TransactionKind::IbcRecvTrasparentTransfer((_, transfer))
                 | TransactionKind::IbcShieldingTransfer((_, transfer))
                 | TransactionKind::IbcUnshieldingTransfer((_, transfer)) => {
                     let sources = transfer
@@ -678,7 +679,11 @@ impl Block {
             })
             .iter()
             .filter_map(|tx| match &tx.kind {
-                TransactionKind::IbcTrasparentTransfer((
+                TransactionKind::IbcSendTrasparentTransfer((
+                    Token::Ibc(ibc_token),
+                    _,
+                ))
+                | TransactionKind::IbcRecvTrasparentTransfer((
                     Token::Ibc(ibc_token),
                     _,
                 ))
@@ -830,7 +835,8 @@ impl Block {
                     })
                     .collect()
             }
-            TransactionKind::IbcTrasparentTransfer((token, data)) => {
+            TransactionKind::IbcSendTrasparentTransfer((token, data))
+            | TransactionKind::IbcRecvTrasparentTransfer((token, data)) => {
                 [&data.sources, &data.targets]
                     .iter()
                     .flat_map(|transfer_changes| {

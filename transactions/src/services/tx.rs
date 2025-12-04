@@ -1,9 +1,12 @@
 use bigdecimal::BigDecimal;
+use namada_sdk::address::Address;
+use namada_sdk::hash::Hash;
 use namada_sdk::ibc::core::channel::types::acknowledgement::AcknowledgementStatus;
 use namada_sdk::ibc::core::channel::types::msgs::PacketMsg;
 use namada_sdk::ibc::core::handler::types::msgs::MsgEnvelope;
 use shared::block_result::{BlockResult, TxAttributesType};
 use shared::gas::GasEstimation;
+use shared::id::Id;
 use shared::transaction::{
     IbcAck, IbcAckStatus, IbcSequence, IbcTokenAction, InnerTransaction,
     TransactionKind, WrapperTransaction, ibc_denom_received, ibc_denom_sent,
@@ -45,18 +48,18 @@ pub fn get_ibc_packets(
     block_results: &BlockResult,
     txs: &[(WrapperTransaction, Vec<InnerTransaction>)],
 ) -> Vec<IbcSequence> {
-    let mut ibc_txs: Vec<_> = txs.iter().rev().fold(
-        Default::default(),
-        |mut acc, (wrapper_tx, inner_txs)| {
-            // Extract successful ibc transactions from each batch
-            for inner_tx in inner_txs {
-                if inner_tx.is_ibc() && inner_tx.was_successful(wrapper_tx) {
-                    acc.push(inner_tx.tx_id.to_owned())
+    let mut legacy_extracted_id_tx_ids =
+        txs.iter().flat_map(|(wrapper_tx, inner_txs)| {
+            inner_txs.iter().filter_map(|inner_tx| {
+                // Extract successful ibc transactions from each batch
+                if inner_tx.is_sent_ibc() && inner_tx.was_successful(wrapper_tx)
+                {
+                    Some(inner_tx.tx_id.to_owned())
+                } else {
+                    None
                 }
-            }
-            acc
-        },
-    );
+            })
+        });
 
     block_results
         .end_events
@@ -71,9 +74,41 @@ pub fn get_ibc_packets(
                         source_channel: packet.source_channel.clone(),
                         dest_channel: packet.dest_channel.clone(),
                         timeout: packet.timeout_timestamp,
-                        tx_id: ibc_txs
-                            .pop()
-                            .expect("Ibc ack should have a corresponding tx."),
+                        tx_id: {
+                            if let Some(id) = event.inner_tx_hash.as_ref() {
+                                // the id was in the event. this should
+                                // be the case 99% of the times, unless
+                                // we're crawling through the history
+                                // of some older namada version, or
+                                // we encounter a pgf funding tx
+                                id.clone()
+                            } else if packet
+                                .as_fungible_token_packet()
+                                .is_some_and(|ics20_packet| {
+                                    matches!(
+                                        ics20_packet.sender.parse().ok(),
+                                        Some(Address::Internal(_))
+                                    )
+                                })
+                            {
+                                // this packet was sent by an internal address,
+                                // most likely the pgf (for pgf funding via
+                                // IBC). there is no inner tx id in this
+                                // case, let's add the hash of the packet
+                                // id, as a workaround.
+                                Id::Hash(
+                                    Hash::sha256(packet.id())
+                                        .to_string()
+                                        .to_lowercase(),
+                                )
+                            } else {
+                                // this handles older namada versions
+                                legacy_extracted_id_tx_ids.next().expect(
+                                    "Ibc sent packet should have a \
+                                     corresponding tx",
+                                )
+                            }
+                        },
                     }),
                     _ => None,
                 }
@@ -171,7 +206,8 @@ pub fn get_gas_estimates(
                     let notes = tx.notes;
                     gas_estimate.increase_mixed_transfer(notes)
                 }
-                TransactionKind::IbcTrasparentTransfer(_) => {
+                TransactionKind::IbcSendTrasparentTransfer(_)
+                | TransactionKind::IbcRecvTrasparentTransfer(_) => {
                     gas_estimate.increase_ibc_transparent_transfer()
                 }
                 TransactionKind::Bond(_) => gas_estimate.increase_bond(),
@@ -226,4 +262,133 @@ pub fn get_gas_estimates(
             gas_estimate
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use namada_sdk::address::PGF;
+    use namada_sdk::ibc::apps::transfer::types::PrefixedCoin;
+    use namada_sdk::ibc::apps::transfer::types::packet::PacketData as Ics20PacketData;
+    use shared::block_result::{
+        Event, EventKind, IbcCorePacketKind, IbcPacket,
+    };
+    use shared::ser::{AccountsMap, TransferData};
+    use shared::token::Token;
+    use shared::transaction::TransactionExitStatus;
+
+    use super::*;
+
+    fn mock_block_result(
+        inner_tx_hash: Option<&str>,
+        with_packet_sender: Option<String>,
+    ) -> BlockResult {
+        BlockResult {
+            end_events: vec![Event {
+                kind: EventKind::IbcCore(IbcCorePacketKind::Send),
+                inner_tx_hash: inner_tx_hash
+                    .map(|hash| Id::Hash(hash.to_string())),
+                attributes: Some(TxAttributesType::SendPacket(IbcPacket {
+                    source_port: "transfer".to_string(),
+                    dest_port: "transfer".to_string(),
+                    source_channel: "channel-0".to_string(),
+                    dest_channel: "channel-0".to_string(),
+                    timeout_timestamp: 0,
+                    timeout_height: String::new(),
+                    sequence: "1".to_string(),
+                    data: with_packet_sender
+                        .map(|sender| {
+                            serde_json::to_string(&Ics20PacketData {
+                                token: PrefixedCoin {
+                                    denom: "eatshit".parse().unwrap(),
+                                    amount: "1234".parse().unwrap(),
+                                },
+                                sender: sender.into(),
+                                receiver: "a1aaaa".to_string().into(),
+                                memo: String::new().into(),
+                            })
+                            .unwrap()
+                        })
+                        .unwrap_or_default(),
+                })),
+            }],
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_get_ibc_packets() {
+        let expected_seq = |tx_id| IbcSequence {
+            sequence_number: "1".to_string(),
+            source_port: "transfer".to_string(),
+            dest_port: "transfer".to_string(),
+            source_channel: "channel-0".to_string(),
+            dest_channel: "channel-0".to_string(),
+            timeout: 0,
+            tx_id,
+        };
+
+        // get ibc seq just from the events + inner tx hash
+        let block_result = mock_block_result(Some("deadbeef"), None);
+        assert_eq!(
+            get_ibc_packets(&block_result, &[]),
+            vec![expected_seq(Id::Hash("deadbeef".to_string()))],
+        );
+
+        // protocol transfer, there is no inner tx hash
+        let block_result = mock_block_result(None, Some(PGF.to_string()));
+        assert_eq!(
+            get_ibc_packets(&block_result, &[]),
+            vec![expected_seq(Id::Hash(
+                Hash::sha256("transfer/channel-0/transfer/channel-0/1")
+                    .to_string()
+                    .to_lowercase()
+            ))],
+        );
+
+        // no inner tx hash in the event, get it from the provided tx slice
+        let block_result = mock_block_result(None, Some("a1aaaa".to_string()));
+        let wrapper = WrapperTransaction {
+            exit_code: TransactionExitStatus::Applied,
+            tx_id: Id::Hash("eatshit".to_string()),
+            index: 0,
+            fee: Default::default(),
+            atomic: false,
+            block_height: 0,
+            total_signatures: 0,
+            size: 0,
+        };
+        let inner1 = InnerTransaction {
+            tx_id: Id::Hash("deadbeef".to_string()),
+            wrapper_id: Id::Hash("eatshit".to_string()),
+            index: 0,
+            kind: TransactionKind::IbcSendTrasparentTransfer((
+                Token::Native(Id::Hash("aabbcc".to_string())),
+                TransferData {
+                    sources: AccountsMap(Default::default()),
+                    targets: AccountsMap(Default::default()),
+                    shielded_section_hash: None,
+                },
+            )),
+            data: None,
+            extra_sections: Default::default(),
+            memo: None,
+            notes: 0,
+            exit_code: TransactionExitStatus::Applied,
+        };
+        let inner2 = InnerTransaction {
+            kind: TransactionKind::IbcRecvTrasparentTransfer((
+                Token::Native(Id::Hash("aabbcc".to_string())),
+                TransferData {
+                    sources: AccountsMap(Default::default()),
+                    targets: AccountsMap(Default::default()),
+                    shielded_section_hash: None,
+                },
+            )),
+            ..inner1.clone()
+        };
+        assert_eq!(
+            get_ibc_packets(&block_result, &[(wrapper, vec![inner1, inner2])]),
+            vec![expected_seq(Id::Hash("deadbeef".to_string()))],
+        );
+    }
 }

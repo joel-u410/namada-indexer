@@ -397,7 +397,7 @@ impl InnerTransaction {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Fee {
     pub gas: String,
     pub gas_used: Option<u64>,
@@ -659,7 +659,7 @@ fn extract_masp_transaction(
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct IbcSequence {
     pub sequence_number: String,
     pub source_port: String,

@@ -24,8 +24,8 @@ fmt-check:
 taplo:
     taplo fmt
 
-test:
-    cargo +{{ RUST_STABLE }} test
+test *ADDITIONAL_ARGS:
+    cargo +{{ RUST_STABLE }} test {{ ADDITIONAL_ARGS }}
 
 clippy:
     cargo +{{ RUST_STABLE }} clippy

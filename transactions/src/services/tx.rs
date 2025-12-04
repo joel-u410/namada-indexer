@@ -50,11 +50,7 @@ pub fn get_ibc_packets(
 ) -> Vec<IbcSequence> {
     let mut legacy_extracted_id_tx_ids =
         txs.iter().flat_map(|(wrapper_tx, inner_txs)| {
-            let mut inner_txs_it = inner_txs.iter();
-
-            std::iter::from_fn(move || {
-                let inner_tx = inner_txs_it.next()?;
-
+            inner_txs.iter().filter_map(|inner_tx| {
                 // Extract successful ibc transactions from each batch
                 if inner_tx.is_sent_ibc() && inner_tx.was_successful(wrapper_tx)
                 {
@@ -361,7 +357,7 @@ mod tests {
             total_signatures: 0,
             size: 0,
         };
-        let inner = InnerTransaction {
+        let inner1 = InnerTransaction {
             tx_id: Id::Hash("deadbeef".to_string()),
             wrapper_id: Id::Hash("eatshit".to_string()),
             index: 0,
@@ -379,8 +375,19 @@ mod tests {
             notes: 0,
             exit_code: TransactionExitStatus::Applied,
         };
+        let inner2 = InnerTransaction {
+            kind: TransactionKind::IbcRecvTrasparentTransfer((
+                Token::Native(Id::Hash("aabbcc".to_string())),
+                TransferData {
+                    sources: AccountsMap(Default::default()),
+                    targets: AccountsMap(Default::default()),
+                    shielded_section_hash: None,
+                },
+            )),
+            ..inner1.clone()
+        };
         assert_eq!(
-            get_ibc_packets(&block_result, &[(wrapper, vec![inner])]),
+            get_ibc_packets(&block_result, &[(wrapper, vec![inner1, inner2])]),
             vec![expected_seq(Id::Hash("deadbeef".to_string()))],
         );
     }

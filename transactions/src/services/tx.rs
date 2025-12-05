@@ -65,56 +65,58 @@ pub fn get_ibc_packets(
         .end_events
         .iter()
         .filter_map(|event| {
-            if let Some(attributes) = &event.attributes {
-                match attributes {
-                    TxAttributesType::SendPacket(packet) => Some(IbcSequence {
-                        sequence_number: packet.sequence.clone(),
-                        source_port: packet.source_port.clone(),
-                        dest_port: packet.dest_port.clone(),
-                        source_channel: packet.source_channel.clone(),
-                        dest_channel: packet.dest_channel.clone(),
-                        timeout: packet.timeout_timestamp,
-                        tx_id: {
-                            if let Some(id) = event.inner_tx_hash.as_ref() {
-                                // the id was in the event. this should
-                                // be the case 99% of the times, unless
-                                // we're crawling through the history
-                                // of some older namada version, or
-                                // we encounter a pgf funding tx
-                                id.clone()
-                            } else if packet
-                                .as_fungible_token_packet()
-                                .is_some_and(|ics20_packet| {
-                                    matches!(
-                                        ics20_packet.sender.parse().ok(),
-                                        Some(Address::Internal(_))
-                                    )
-                                })
-                            {
-                                // this packet was sent by an internal address,
-                                // most likely the pgf (for pgf funding via
-                                // IBC). there is no inner tx id in this
-                                // case, let's add the hash of the packet
-                                // id, as a workaround.
-                                Id::Hash(
-                                    Hash::sha256(packet.id())
-                                        .to_string()
-                                        .to_lowercase(),
-                                )
-                            } else {
-                                // this handles older namada versions
-                                legacy_extracted_id_tx_ids.next().expect(
-                                    "Ibc sent packet should have a \
-                                     corresponding tx",
-                                )
-                            }
+            let attributes = event.attributes.as_ref()?;
+            let TxAttributesType::SendPacket(packet) = attributes else {
+                return None;
+            };
+
+            Some(IbcSequence {
+                sequence_number: packet.sequence.clone(),
+                source_port: packet.source_port.clone(),
+                dest_port: packet.dest_port.clone(),
+                source_channel: packet.source_channel.clone(),
+                dest_channel: packet.dest_channel.clone(),
+                timeout: packet.timeout_timestamp,
+                tx_id: {
+                    if let Some(id) = event.inner_tx_hash.as_ref() {
+                        // the id was in the event. this should
+                        // be the case 99% of the times, unless
+                        // we're crawling through the history
+                        // of some older namada version, or
+                        // we encounter a pgf funding tx
+                        txs.iter().find_map(|(wrapper_tx, inner_txs)| {
+                            inner_txs.iter().find(|inner_tx| {
+                                inner_tx.was_successful(wrapper_tx)
+                                    && &inner_tx.tx_id == id
+                            })?;
+                            Some(id.clone())
+                        })?
+                    } else if packet.as_fungible_token_packet().is_some_and(
+                        |ics20_packet| {
+                            matches!(
+                                ics20_packet.sender.parse().ok(),
+                                Some(Address::Internal(_))
+                            )
                         },
-                    }),
-                    _ => None,
-                }
-            } else {
-                None
-            }
+                    ) {
+                        // this packet was sent by an internal address,
+                        // most likely the pgf (for pgf funding via
+                        // IBC). there is no inner tx id in this
+                        // case, let's add the hash of the packet
+                        // id, as a workaround.
+                        Id::Hash(
+                            Hash::sha256(packet.id())
+                                .to_string()
+                                .to_lowercase(),
+                        )
+                    } else {
+                        // this handles older namada versions
+                        legacy_extracted_id_tx_ids.next().expect(
+                            "Ibc sent packet should have a corresponding tx",
+                        )
+                    }
+                },
+            })
         })
         .collect::<Vec<_>>()
 }
@@ -327,26 +329,6 @@ mod tests {
             tx_id,
         };
 
-        // get ibc seq just from the events + inner tx hash
-        let block_result = mock_block_result(Some("deadbeef"), None);
-        assert_eq!(
-            get_ibc_packets(&block_result, &[]),
-            vec![expected_seq(Id::Hash("deadbeef".to_string()))],
-        );
-
-        // protocol transfer, there is no inner tx hash
-        let block_result = mock_block_result(None, Some(PGF.to_string()));
-        assert_eq!(
-            get_ibc_packets(&block_result, &[]),
-            vec![expected_seq(Id::Hash(
-                Hash::sha256("transfer/channel-0/transfer/channel-0/1")
-                    .to_string()
-                    .to_lowercase()
-            ))],
-        );
-
-        // no inner tx hash in the event, get it from the provided tx slice
-        let block_result = mock_block_result(None, Some("a1aaaa".to_string()));
         let wrapper = WrapperTransaction {
             exit_code: TransactionExitStatus::Applied,
             tx_id: Id::Hash("eatshit".to_string()),
@@ -386,8 +368,30 @@ mod tests {
             )),
             ..inner1.clone()
         };
+        let txs = [(wrapper, vec![inner1, inner2])];
+
+        // get ibc seq just from the events + inner tx hash
+        let block_result = mock_block_result(Some("deadbeef"), None);
         assert_eq!(
-            get_ibc_packets(&block_result, &[(wrapper, vec![inner1, inner2])]),
+            get_ibc_packets(&block_result, &txs),
+            vec![expected_seq(Id::Hash("deadbeef".to_string()))],
+        );
+
+        // protocol transfer, there is no inner tx hash
+        let block_result = mock_block_result(None, Some(PGF.to_string()));
+        assert_eq!(
+            get_ibc_packets(&block_result, &[]),
+            vec![expected_seq(Id::Hash(
+                Hash::sha256("transfer/channel-0/transfer/channel-0/1")
+                    .to_string()
+                    .to_lowercase()
+            ))],
+        );
+
+        // no inner tx hash in the event, get it from the provided tx slice
+        let block_result = mock_block_result(None, Some("a1aaaa".to_string()));
+        assert_eq!(
+            get_ibc_packets(&block_result, &txs),
             vec![expected_seq(Id::Hash("deadbeef".to_string()))],
         );
     }

@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use anyhow::Context;
 use namada_ibc::apps::nft_transfer::types::PORT_ID_STR as NFT_PORT_ID_STR;
 use namada_ibc::apps::transfer::types::packet::PacketData as FtPacketData;
@@ -10,7 +12,7 @@ use namada_ibc::core::channel::types::msgs::PacketMsg;
 use namada_ibc::core::channel::types::packet::Packet;
 use namada_ibc::core::handler::types::msgs::MsgEnvelope;
 use namada_ibc::core::host::types::identifiers::{ChannelId, PortId};
-use namada_sdk::address::Address;
+use namada_sdk::address::{Address, IBC};
 use namada_sdk::token::Transfer;
 
 use crate::id::Id;
@@ -275,34 +277,57 @@ pub fn transfer_to_ibc_tx_kind(
                 &transfer.message.packet_data.token.denom,
             )?;
 
+            // Extract the sources, targets and shielded section hash from the
+            // transfer data. Remove the occurences of the IBC address since we
+            // will replace them with more accurate data
+            let (mut sources, mut targets, shielded_section_hash) = transfer
+                .transfer
+                .clone()
+                .map(|t| {
+                    (
+                        t.sources
+                            .into_iter()
+                            .filter_map(|(source, amount)| {
+                                (source.owner != IBC).then_some((
+                                    ChainAddress::ChainAccount(source),
+                                    amount,
+                                ))
+                            })
+                            .collect::<BTreeMap<_, _>>(),
+                        t.targets
+                            .into_iter()
+                            .filter_map(|(target, amount)| {
+                                (target.owner != IBC).then_some((
+                                    ChainAddress::ChainAccount(target),
+                                    amount,
+                                ))
+                            })
+                            .collect::<BTreeMap<_, _>>(),
+                        t.shielded_section_hash,
+                    )
+                })
+                .unwrap_or_default();
+            // Extend sources and targets with the actual IBC addresses
+            sources.insert(
+                convert_account(
+                    &transfer.message.packet_data,
+                    token.clone(),
+                    true,
+                )
+                .expect("Should be able to convert sender"),
+                denominated_amount,
+            );
+            targets.insert(
+                ChainAddress::ExternalAccount(
+                    transfer.message.packet_data.receiver.to_string(),
+                    token,
+                ),
+                denominated_amount,
+            );
             let transfer_data = TransferData {
-                sources: crate::ser::AccountsMap(
-                    [(
-                        convert_account(
-                            &transfer.message.packet_data,
-                            token.clone(),
-                            true,
-                        )
-                        .expect("Should be able to convert sender"),
-                        denominated_amount,
-                    )]
-                    .into(),
-                ),
-                targets: crate::ser::AccountsMap(
-                    [(
-                        ChainAddress::ExternalAccount(
-                            transfer.message.packet_data.receiver.to_string(),
-                            token,
-                        ),
-                        denominated_amount,
-                    )]
-                    .into(),
-                ),
-                shielded_section_hash: transfer
-                    .transfer
-                    .clone()
-                    .map(|t| t.shielded_section_hash)
-                    .unwrap_or_default(),
+                sources: crate::ser::AccountsMap(sources),
+                targets: crate::ser::AccountsMap(targets),
+                shielded_section_hash,
             };
 
             if transfer.transfer.is_some() {
